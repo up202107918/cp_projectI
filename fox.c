@@ -5,12 +5,6 @@
 #include <string.h>
 
 #define INF 1000000000
-// Compile-time default for padding when N % q != 0. Runtime options override.
-#ifndef ENABLE_PADDING
-#define ENABLE_PADDING 1
-#endif
-
-typedef enum { PAD_AUTO = 0, PAD_ON = 1, PAD_OFF = 2 } padding_mode_t;
 
 typedef struct {
     int p;              // total processes
@@ -98,16 +92,16 @@ static void fox_minplus(const Grid* g, const int* A_local_in, int* B_local_io, i
 }
 
 // Copy out a block (bs x bs) from a padded matrix (Npad x Npad) starting at (r0, c0)
-static void copy_block_out(const int* M, int Npad, int r0, int c0, int bs, int* out) {
+static void copy_block_out(const int* M, int N, int r0, int c0, int bs, int* out) {
     for (int i = 0; i < bs; ++i) {
-        memcpy(out + i * bs, M + (r0 + i) * Npad + c0, (size_t)bs * sizeof(int));
+        memcpy(out + i * bs, M + (r0 + i) * N + c0, (size_t)bs * sizeof(int));
     }
 }
 
-// Copy in a block (bs x bs) into a padded matrix (Npad x Npad) at (r0, c0)
-static void copy_block_in(int* M, int Npad, int r0, int c0, int bs, const int* in) {
+// Copy in a block (bs x bs) into a matrix (N x N) at (r0, c0)
+static void copy_block_in(int* M, int N, int r0, int c0, int bs, const int* in) {
     for (int i = 0; i < bs; ++i) {
-        memcpy(M + (r0 + i) * Npad + c0, in + i * bs, (size_t)bs * sizeof(int));
+        memcpy(M + (r0 + i) * N + c0, in + i * bs, (size_t)bs * sizeof(int));
     }
 }
 
@@ -179,50 +173,8 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // Determine runtime padding mode from argv/env on rank 0
-    padding_mode_t pad_mode = PAD_AUTO;
-    if (world_rank == 0) {
-        int specified = 0;
-        // Environment variable FOX_PADDING: on|off|auto
-        const char* env = getenv("FOX_PADDING");
-        if (env && *env) {
-            if (strcmp(env, "on") == 0 || strcmp(env, "ON") == 0) pad_mode = PAD_ON;
-            else if (strcmp(env, "off") == 0 || strcmp(env, "OFF") == 0) pad_mode = PAD_OFF;
-            else pad_mode = PAD_AUTO;
-            specified = 1;
-        }
-        // Command-line: --padding=on|off|auto (overrides env if present)
-        for (int i = 1; i < argc; ++i) {
-            if (strncmp(argv[i], "--padding=", 10) == 0) {
-                const char* v = argv[i] + 10;
-                if (strcmp(v, "on") == 0) pad_mode = PAD_ON;
-                else if (strcmp(v, "off") == 0) pad_mode = PAD_OFF;
-                else pad_mode = PAD_AUTO;
-                specified = 1;
-            }
-        }
-        // Default to compile-time setting when neither env nor argv specified
-        if (!specified) {
-            pad_mode = ENABLE_PADDING ? PAD_ON : PAD_AUTO;
-        }
-    }
-    MPI_Bcast(&pad_mode, 1, MPI_INT, 0, MPI_COMM_WORLD);
-
-    // Decide whether to allow padding when N % q != 0
-    int need_padding = (N % grid.q != 0);
-    int allow_padding = 0;
-    if (!need_padding) {
-        allow_padding = 1;
-    } else if (pad_mode == PAD_ON) {
-        allow_padding = 1;
-    } else if (pad_mode == PAD_OFF) {
-        allow_padding = 0;
-    } else { // PAD_AUTO
-        // Policy: allow for N >= 6, disallow for very small sizes like N=5 per requirement
-        allow_padding = (N >= 6);
-    }
-
-    if (need_padding && !allow_padding) {
+    // Require perfect block decomposition without padding
+    if (N % grid.q != 0) {
         if (world_rank == 0) {
             printf("ERROR: Invalid configuration!\n");
             fflush(stdout);
@@ -231,44 +183,18 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // Compute padded size and block size (with padding if needed)
-    int bs = need_padding ? ((N + grid.q - 1) / grid.q) : (N / grid.q);
-    int Npad = bs * grid.q;
+    // Block size and global matrix distribution without padding
+    int bs = N / grid.q;
 
-    // Root builds padded matrix of size Npad x Npad
-    int* M_padded = NULL;
-    if (world_rank == 0) {
-        M_padded = (int*)malloc((size_t)Npad * Npad * sizeof(int));
-        if (!M_padded) {
-            fprintf(stderr, "Allocation failed at root padded\n");
-            MPI_Abort(MPI_COMM_WORLD, 1);
-        }
-        // Initialize with INF and 0 on diagonal
-        for (int i = 0; i < Npad; ++i) {
-            for (int j = 0; j < Npad; ++j) {
-                if (i == j) M_padded[(size_t)i * Npad + j] = 0;
-                else M_padded[(size_t)i * Npad + j] = INF;
-            }
-        }
-        // Copy original into padded area
-        for (int i = 0; i < N; ++i) {
-            for (int j = 0; j < N; ++j) {
-                M_padded[(size_t)i * Npad + j] = M_global[(size_t)i * N + j];
-            }
-        }
-        free(M_global);
-        M_global = NULL;
-    }
-
-    // Broadcast padded matrix to everyone (one-time distribution)
+    // Broadcast the full N x N matrix to all ranks
     if (world_rank != 0) {
-        M_padded = (int*)malloc((size_t)Npad * Npad * sizeof(int));
-        if (!M_padded) {
-            fprintf(stderr, "Allocation failed at worker padded\n");
+        M_global = (int*)malloc((size_t)N * N * sizeof(int));
+        if (!M_global) {
+            fprintf(stderr, "Allocation failed at worker global\n");
             MPI_Abort(MPI_COMM_WORLD, 1);
         }
     }
-    MPI_Bcast(M_padded, Npad * Npad, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(M_global, N * N, MPI_INT, 0, MPI_COMM_WORLD);
 
     // Extract my local block
     int* A_local = (int*)malloc((size_t)bs * bs * sizeof(int));
@@ -280,7 +206,7 @@ int main(int argc, char** argv) {
     }
     int r0 = grid.my_row * bs;
     int c0 = grid.my_col * bs;
-    copy_block_out(M_padded, Npad, r0, c0, bs, A_local);
+    copy_block_out(M_global, N, r0, c0, bs, A_local);
     memcpy(B_local, A_local, (size_t)bs * bs * sizeof(int));
 
     // Repeated squaring: compute T = D; then T = T(minplus)T, k times until 2^k >= N-1
@@ -292,10 +218,10 @@ int main(int argc, char** argv) {
         memcpy(B_local, A_local, (size_t)bs * bs * sizeof(int));
     }
 
-    // Gather result blocks to grid root (rank 0 in grid communicator) into M_padded
+    // Gather result blocks to grid root (rank 0 in grid communicator) into M_global
     if (grid.my_rank == 0) {
         // Place own block
-        copy_block_in(M_padded, Npad, r0, c0, bs, A_local);
+        copy_block_in(M_global, N, r0, c0, bs, A_local);
         // Receive other blocks
         for (int pr = 0; pr < grid.q; ++pr) {
             for (int pc = 0; pc < grid.q; ++pc) {
@@ -305,14 +231,14 @@ int main(int argc, char** argv) {
                 if (rank_in_grid == grid.my_rank) continue;
                 int* buf = (int*)malloc((size_t)bs * bs * sizeof(int));
                 MPI_Recv(buf, bs * bs, MPI_INT, rank_in_grid, 777, grid.grid_comm, MPI_STATUS_IGNORE);
-                copy_block_in(M_padded, Npad, pr * bs, pc * bs, bs, buf);
+                copy_block_in(M_global, N, pr * bs, pc * bs, bs, buf);
                 free(buf);
             }
         }
         // Print the top-left N x N, converting INF to 0
         for (int i = 0; i < N; ++i) {
             for (int j = 0; j < N; ++j) {
-                int v = M_padded[(size_t)i * Npad + j];
+                int v = M_global[(size_t)i * N + j];
                 if (v >= INF) v = 0;
                 if (j) printf(" %d", v);
                 else printf("%d", v);
@@ -323,8 +249,8 @@ int main(int argc, char** argv) {
         // Send my block to grid root
         MPI_Send(A_local, bs * bs, MPI_INT, 0, 777, grid.grid_comm);
     }
-
-    free(M_padded);
+    
+    free(M_global);
     free(A_local);
     free(B_local);
     free(C_local);
