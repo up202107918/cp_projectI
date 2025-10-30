@@ -136,7 +136,7 @@ int main(int argc, char** argv) {
     int* M_global = NULL; // NxN
     if (world_rank == 0) {
         if (scanf("%d", &N) != 1) {
-            // invalid input
+            // invalid input (anything that is not an integer)
             printf("ERROR: Invalid configuration!\n");
             fflush(stdout);
             MPI_Finalize();
@@ -168,6 +168,16 @@ int main(int argc, char** argv) {
 
     // Broadcast N to all
     MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
+
+    // Requirement: fail for any uneven (odd) N regardless of number of processes
+    if ((N % 2) != 0) {
+        if (world_rank == 0) {
+            printf("ERROR: Invalid configuration!\n");
+            fflush(stdout);
+        }
+        MPI_Finalize();
+        return 0;
+    }
 
     // Determine runtime padding mode from argv/env on rank 0
     padding_mode_t pad_mode = PAD_AUTO;
