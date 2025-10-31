@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run MPI Program (4 processes)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "/opt/homebrew/bin/mpirun",
+      "args": [
+        "--mca", "btl", "self,tcp",
+        "-np", "4",
+        "${workspaceFolder}/program"
+      ],
+      "stopAtEntry": false,
+      "cwd": "${workspaceFolder}",
+      "environment": [],
+      "externalConsole": true,
+      "MIMode": "lldb"
+    }
+  ]
+}
