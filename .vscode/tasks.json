@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build MPI Program",
+      "type": "shell",
+      "command": "/opt/homebrew/bin/mpicc",
+      "args": [
+        "-o",
+        "program",   // nome do executável
+        "main.c"     // troque pelo nome do seu arquivo fonte
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}
