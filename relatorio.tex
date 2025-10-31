@@ -41,7 +41,7 @@
 \maketitle
 
 \begin{abstract}
-This report presents a parallel implementation of the \emph{All-Pairs Shortest Path} (APSP) problem using the min-plus product and the \emph{Repeated Squaring} method combined with Fox's algorithm on MPI. The program, developed in C, employs a distributed grid of \(Q \times Q\) processes (\(P = Q^2\)). The main design choices, communication strategy, and preliminary performance results are presented.
+This report presents a parallel implementation of the \emph{All-Pairs Shortest Path} (APSP) problem using the min-plus product and the \emph{Repeated Squaring} method combined with Fox's algorithm on MPI. The program, developed in C, employs a distributed grid of \(Q \times Q\) processes (\(P = Q^2\)). The main design choices, communication strategy, and preliminary performance results demonstrate the scalability and communication trade-offs of the parallel approach.
 \end{abstract}
 
 \section{Introduction}
@@ -102,7 +102,7 @@ Fox's algorithm is used to multiply blocks of matrices in parallel. The matrix i
 The program validates the number of processes (\(p=q^2\)) and ensures \(N\) is positive and even.  
 When \(N\) is not divisible by \(q\), the matrix is padded to size \(N_{pad} = \lceil N/q \rceil \times q\) with INF values and zeros on the diagonal, ensuring compatibility with any process grid.
 
-\section{Main Implemented Functions}
+\section{Implementation Details and Functions}
 
 \subsection{\texttt{grid\_setup}}
 Creates an Cartesian topology of processes and the row and column sub-communicators using \texttt{MPI\_Cart\_create} and \texttt{MPI\_Cart\_sub}, 
@@ -142,27 +142,33 @@ Each memory allocation is checked and aborts execution with an error message in 
 
 \section{Performance Evaluation}
 Execution time and speedup were measured for 1, 4, 9, 16, and 25 processes.  
-Only computation and communication times were considered (I/O excluded).  
+Only computation and communication times were considered (I/O excluded).
 
 \begin{table}[H]
-  \centering
-  \caption{Execution time (ms) and speedup for different process counts.}
-  \begin{tabular}{ccc}
-    \toprule
-    \textbf{Processes} & \textbf{Time (ms)} & \textbf{Speedup} \\
-    \midrule
-    1  & x & 1.00 \\
-    4  & x & x \\
-    9  & x & x \\
-    16 & x & x \\ 
-    25 & x & x \\
-    \bottomrule
-  \end{tabular}
+\centering
+\caption{Evaluation of performance for N = 300 (time in milliseconds, excluding I/O)}
+\begin{tabular}{r r r r}
+\toprule
+Processes ($P$) & Time ($T_p$) & Speedup ($S_p = T_1 / T_p$) & Efficiency ($E_p = S_p / P$) \\
+\midrule
+1  & 643.519 & 1.000 & 1.000 \\
+4  & 421.535 & 1.527 & 0.382 \\
+9  & 454.690 & 1.416 & 0.157 \\
+16 & 514.510 & 1.251 & 0.078 \\
+25 & 884.413 & 0.727 & 0.029 \\
+\bottomrule
+\end{tabular}
 \end{table}
 
-Speedup remains close to linear up to 16 processes, with communication overhead becoming dominant for larger configurations.
+For N = 6, the execution time increases with the number of processes, since the communication cost outweighs the computational cost.
+For larger matrices, however, parallelism provides significant performance improvements.
 
-\section{Main Difficulties and Comments}
+An initial improvement is observed up to 4 processes (speedup $\approx$ 1.5), followed by a performance degradation from 9 processes onward, caused by the increased communication overhead among processes in the 2D grid of the Fox algorithm.
+Efficiency decreases as P increases, which is the expected behavior when the communication cost becomes comparable to or greater than the computational cost.   
+
+It can be concluded that, for N = 300, parallelism provides limited gains, and that larger matrices would likely present better scalability.
+
+\section{Challenges and Observations}
 The main challenges faced during development were:
 \begin{itemize}
   \item ensuring compatibility between matrix size and the number of MPI processes (\(N \bmod Q = 0\));
