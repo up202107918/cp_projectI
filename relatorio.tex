@@ -142,11 +142,27 @@ Each memory allocation is checked and aborts execution with an error message in 
 
 \section{Performance Evaluation}
 Execution time and speedup were measured for 1, 4, 9, 16, and 25 processes.  
-Only computation and communication times were considered (I/O excluded).
+Only computation and communication times were considered (I/O excluded). Evaluation of performance for N = 300.
 
 \begin{table}[H]
 \centering
-\caption{Evaluation of performance for N = 300 (time in milliseconds, excluding I/O)}
+\caption{CPU user and system times for N = 300 (in seconds, excluding I/O)}
+\begin{tabular}{r r r r r}
+\toprule
+Processes ($P$) & User time (s) & System time (s) & Total (s) & CPU usage (\%) \\
+\midrule
+1  & 0.73 & 0.11 & 1.234 & 68 \\
+4  & 0.91 & 0.43 & 1.093 & 121 \\
+9  & 1.21 & 0.91 & 1.417 & 149 \\
+16 & 1.50 & 1.25 & 1.738 & 158 \\
+25 & 2.30 & 2.64 & 2.883 & 171 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Wall-clock times measured with MPI\_Wtime() for N = 300 (in milliseconds, excluding I/O)}
 \begin{tabular}{r r r r}
 \toprule
 Processes ($P$) & Time ($T_p$) & Speedup ($S_p = T_1 / T_p$) & Efficiency ($E_p = S_p / P$) \\
@@ -160,13 +176,15 @@ Processes ($P$) & Time ($T_p$) & Speedup ($S_p = T_1 / T_p$) & Efficiency ($E_p 
 \end{tabular}
 \end{table}
 
-For N = 6, the execution time increases with the number of processes, since the communication cost outweighs the computational cost.
-For larger matrices, however, parallelism provides significant performance improvements.
+For N = 6, the execution time increases with the number of processes, since the communication cost outweighs the computational cost. 
+For larger matrices, however, parallelism provides noticeable performance improvements.
 
-An initial improvement is observed up to 4 processes (speedup $\approx$ 1.5), followed by a performance degradation from 9 processes onward, caused by the increased communication overhead among processes in the 2D grid of the Fox algorithm.
-Efficiency decreases as P increases, which is the expected behavior when the communication cost becomes comparable to or greater than the computational cost.   
+An initial improvement is observed up to 4 processes (speedup $\approx 1.5$), followed by a performance degradation from 9 processes onward, caused by the increased communication overhead among processes in the 2D grid of the Fox algorithm. 
+Efficiency decreases as $P$ increases, which is the expected behavior when the communication cost becomes comparable to or greater than the computational cost.
 
-It can be concluded that, for N = 300, parallelism provides limited gains, and that larger matrices would likely present better scalability.
+When comparing the internal \texttt{MPI\_Wtime()} results with the external \texttt{time} command measurements, both indicate consistent wall-clock performance trends.
+
+Overall, parallelism provides limited gains for $N = 300$, while larger matrices would likely scale better.
 
 \section{Challenges and Observations}
 The main challenges faced during development were:
